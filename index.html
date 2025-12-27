@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guadalupe River Flash Flood – Tsunami-like Surge Zones (July 2025: +26 ft in 45 min)</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<style>
+  html, body, #map { height: 100%; margin: 0; padding: 0; }
+  .top-banner {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(255,255,255,0.96); padding: 10px 16px; border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.15); font-family: system-ui, sans-serif;
+    text-align:center; z-index: 9999; max-width: 92%;
+  }
+  .top-banner .title { font-size: 16px; font-weight: 700; }
+  .top-banner .sub { font-size: 12px; margin-top: 4px; }
+  .legend {
+    position: fixed; bottom: 14px; left: 14px; z-index: 9999;
+    background: rgba(255,255,255,0.96); padding: 8px 12px; border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.15); font-family: system-ui, sans-serif; font-size: 12px;
+  }
+  .legend .row { display: flex; align-items: center; margin: 4px 0; }
+  .legend .swatch { width: 18px; height: 4px; margin-right: 8px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="top-banner">
+  <div class="title">Guadalupe River Flash Flood – Tsunami-like Surge Zones (July 2025: +26 ft in 45 min)</div>
+  <div class="sub">Originally published July 5, 2025 — Predicted path later aligned with SAR events.<br>
+  Designed independently by Anuar Aubakirov — Free for emergency use.</div>
+</div>
+<div id="map"></div>
+<div class="legend">
+  <div><b>Layers</b></div>
+  <div class="row"><div class="swatch" style="background:#ff6a00;"></div>Zone A — Camp Mystic → Comfort</div>
+  <div class="row"><div class="swatch" style="background:#6a00ff;"></div>Zone B — Canyon Dam → New Braunfels</div>
+  <div class="row"><div class="swatch" style="background:#008a8a;"></div>Zone C — Cuero → San Antonio Bay</div>
+  <div class="row"><div class="swatch" style="background:#00aa88;"></div>Recovery Focus Ovals (hypothesis)</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+ integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+// ---- Checkpoints (polyline backbone) ----
+const CHECKPOINTS = [
+  {name:"Camp Mystic (Hunt)", lat:30.0606, lon:-99.3366},
+  {name:"Kerrville", lat:30.0474, lon:-99.1403},
+  {name:"Center Point", lat:29.9435, lon:-99.0364},
+  {name:"Comfort", lat:29.9669, lon:-98.9061},
+  {name:"Canyon Dam", lat:29.8751, lon:-98.2142},
+  {name:"New Braunfels", lat:29.7030, lon:-98.1245},
+  {name:"Seguin", lat:29.5688, lon:-97.9647},
+  {name:"Cuero", lat:29.0928, lon:-97.2894},
+  {name:"San Antonio Bay (mouth)", lat:28.3000, lon:-96.8000}
+];
+
+// ---- Recovery points (fill later if needed) ----
+const RECOVERY_POINTS = [
+  // {name:"Bridge Bend – sample", lat:29.9870, lon:-99.3290, category:"recovery", date:"2025-07-06", desc:"Example note", url:""}
+];
+
+// ---- Recovery Focus Ovals (ellipses) ----
+// a_m = semi-major (downstream axis), b_m = semi-minor (cross-stream)
+const RECOVERY_ELLIPSES = [
+  {name:"Camp Mystic downstream bend", lat:30.053, lon:-99.310, a_m:900,  b_m:450, note:"Upstream bends can trap debris/bodies"},
+  {name:"Kerrville low-water/park area", lat:30.043, lon:-99.133, a_m:1000, b_m:500, note:"Urban park reach + structures"},
+  {name:"Center Point bridge reach", lat:29.949, lon:-99.032, a_m:1100, b_m:550, note:"Bridges + mid-channel bars"},
+  {name:"Comfort town bends", lat:29.962, lon:-98.900, a_m:1100, b_m:600, note:"Tight bends near town"},
+  {name:"Canyon Lake Dam tailrace", lat:29.857, lon:-98.173, a_m:1500, b_m:700, note:"Dam outflow constriction"},
+  {name:"New Braunfels/Gruene low bridges", lat:29.704, lon:-98.125, a_m:1600, b_m:800, note:"Bridges & urban obstructions"},
+  {name:"Seguin dam/rapids reach", lat:29.568, lon:-97.964, a_m:1700, b_m:850, note:"Flow constriction & eddies"},
+  {name:"Cuero river bends", lat:29.092, lon:-97.289, a_m:2200, b_m:1100, note:"Meanders/point bars"},
+  {name:"Victoria bridge/urban reach", lat:28.805, lon:-97.003, a_m:2600, b_m:1300, note:"Multiple bridges & slackwater pockets"},
+  {name:"San Antonio Bay estuary fan", lat:28.300, lon:-96.800, a_m:5000, b_m:2500, note:"Estuarine deposition / final catchment"}
+];
+
+// ---- Helpers ----
+function toRadians(d){ return d*Math.PI/180; }
+function toDegrees(r){ return r*180/Math.PI; }
+function bearing(lat1, lon1, lat2, lon2){
+  // Fwd azimuth from point1 to point2 (deg)
+  const φ1 = toRadians(lat1), φ2 = toRadians(lat2);
+  const Δλ = toRadians(lon2 - lon1);
+  const y = Math.sin(Δλ)*Math.cos(φ2);
+  const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+  return (toDegrees(Math.atan2(y, x)) + 360) % 360;
+}
+function nearestSegmentBearing(lat, lon, polyLatLngs){
+  // crude: pick the smallest sum of distances to segment endpoints
+  let best = {i:0, brg:0, score:Infinity};
+  for(let i=0;i<polyLatLngs.length-1;i++){
+    const a = polyLatLngs[i], b = polyLatLngs[i+1];
+    const score = Math.hypot(lat-a[0], lon-a[1]) + Math.hypot(lat-b[0], lon-b[1]);
+    if(score < best.score){
+      best.score = score;
+      best.i = i;
+      best.brg = bearing(a[0], a[1], b[0], b[1]);
+    }
+  }
+  return best.brg;
+}
+// meters → degrees helper at given latitude
+function meterOffsetsToLatLng(latCenter, dx_m, dy_m){
+  const R = 6378137; // meters
+  const dLat = (dy_m / R) * 180/Math.PI;
+  const dLon = (dx_m / (R * Math.cos(toRadians(latCenter)))) * 180/Math.PI;
+  return [dLat, dLon];
+}
+function ellipsePolygon(lat, lon, a_m, b_m, angle_deg, steps=90){
+  // build an oriented ellipse polygon around (lat,lon)
+  const pts = [];
+  const θ = toRadians(angle_deg);
+  for(let k=0;k<steps;k++){
+    const t = 2*Math.PI*k/steps;
+    const x = a_m*Math.cos(t);
+    const y = b_m*Math.sin(t);
+    // rotate by θ
+    const xr = x*Math.cos(θ) - y*Math.sin(θ);
+    const yr = x*Math.sin(θ) + y*Math.cos(θ);
+    const [dLat, dLon] = meterOffsetsToLatLng(lat, xr, yr);
+    pts.push([lat + dLat, lon + dLon]);
+  }
+  return pts;
+}
+
+// Build map
+const mid = CHECKPOINTS[Math.floor(CHECKPOINTS.length/2)];
+const map = L.map('map', { zoomControl: true }).setView([mid.lat, mid.lon], 8);
+
+// Basemaps
+const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '© OpenStreetMap'
+}).addTo(map);
+const esriGray = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', 
+  { attribution: 'Esri World Light Gray' }
+);
+const baseLayers = { "OpenStreetMap": osm, "Esri Gray": esriGray };
+
+// Full river polyline (thin blue)
+const riverLatLngs = CHECKPOINTS.map(p => [p.lat, p.lon]);
+L.polyline(riverLatLngs, {color:'#0066cc', weight:3, opacity:0.9}).addTo(map).bindTooltip("Guadalupe River (approx path)");
+
+// Zone segments (thicker, colored)
+const zoneA = L.polyline(riverLatLngs.slice(0, 4), {color:'#ff6a00', weight:8, opacity:0.35}).addTo(map);
+const zoneB = L.polyline(riverLatLngs.slice(4, 6), {color:'#6a00ff', weight:8, opacity:0.35}).addTo(map);
+const zoneC = L.polyline(riverLatLngs.slice(7, 9), {color:'#008a8a', weight:8, opacity:0.35}).addTo(map);
+
+// Checkpoint markers
+CHECKPOINTS.forEach(p => {
+  L.circleMarker([p.lat, p.lon], {radius:4, weight:1}).addTo(map).bindTooltip(p.name);
+});
+
+// Recovery markers layer
+const recoveryLayer = L.layerGroup();
+RECOVERY_POINTS.forEach(r => {
+  const popup = `<b>${r.name||""}</b><br>${r.date||""}<br>${r.desc||""}`;
+  L.marker([r.lat, r.lon]).addTo(recoveryLayer).bindPopup(popup).bindTooltip(r.category||"event");
+});
+
+// Recovery focus ovals (ellipses) layer
+const ovalsLayer = L.layerGroup();
+RECOVERY_ELLIPSES.forEach(z => {
+  const angle = nearestSegmentBearing(z.lat, z.lon, riverLatLngs);  // align to river
+  const poly = ellipsePolygon(z.lat, z.lon, z.a_m, z.b_m, angle, 96);
+  const el = L.polygon(poly, {
+    color: '#00aa88',
+    weight: 1,
+    fill: true,
+    fillOpacity: 0.18
+  }).addTo(ovalsLayer);
+  el.bindPopup(`<b>${z.name}</b><br>${z.note||""}<br><i>a</i>=${z.a_m} m, <i>b</i>=${z.b_m} m`);
+});
+
+// Layers control
+L.control.layers(baseLayers, {
+  "Zone A": zoneA,
+  "Zone B": zoneB,
+  "Zone C": zoneC,
+  "Recovery Focus Ovals": ovalsLayer,
+  "Recovery Points (confirmed)": recoveryLayer
+}, {collapsed:true}).addTo(map);
+
+// Fit bounds
+const bounds = L.latLngBounds(riverLatLngs);
+map.fitBounds(bounds);
+
+// Turn on ovals and points by default
+ovalsLayer.addTo(map);
+recoveryLayer.addTo(map);
+</script>
+</body>
+</html>
